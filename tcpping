@@ -57,8 +57,10 @@
 # 2024/10/24 v2.6 Added support for optional /etc/tcpping.conf file
 #                 Various shellcheck fixes
 # 2025/06/05 v2.7 Fix output parsing on some traceroute implementations, Thanks to Luke Hamburg <github.com/luckman212>
+# 2025/09/15 v2.8-dev
+#                 Fix bogus output when awk cannot parse rtt on linux with traceroute
 
-ver="v2.7"
+ver="v2.8-dev"
 format="%Y%m%d%H%M%S"
 d="no"
 c="no"
@@ -283,7 +285,11 @@ _testSite() {
 	else
 		rtt=`echo "${traceRoute}" | awk '{print $4}'`
 	fi
-	rtt=`echo "${traceRoute}" | awk '{print $(NF-1)}'`
+    if [ "${rtt}" != "" ]; then
+            rtt=`echo "${traceRoute}" | awk '{print $(NF-1)}'`
+    else
+            rtt=""
+    fi
 	not=`echo "${rtt}" | tr -d ".0123456789"`
 
 	[ "${d}" = "yes" ] && echo "$nowd"
