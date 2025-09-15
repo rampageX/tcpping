@@ -8,7 +8,7 @@
 #
 # (c) 2002-2025 Richard van den Berg <richard@vdberg.org>, Orsiris de Jong <ozy@netpower.fr>
 # under the GPL http://www.gnu.org/copyleft/gpl.html
-#               
+#
 #
 # 2002/12/20 v1.0 initial version
 # 2003/01/25 v1.1 added -c and -r options
@@ -48,7 +48,7 @@
 #                 Set default wait interval (-r) parameter to auto
 #                 Set default timeToWait parameter to 1 second
 # 2024/09/04 v2.5 Fixed set -o pipefail only exists on bash
-#                 Aloow _DEBUG parameter needed to be set in environment
+#                 Allow _DEBUG parameter needed to be set in environment
 #                 Fixed -n parameter together with -C parameter did not produce expected output
 #                 Improved traceroute binary detection
 #                 Send error messages to stderr
@@ -59,12 +59,15 @@
 # 2025/06/05 v2.7 Fix output parsing on some traceroute implementations, Thanks to Luke Hamburg <github.com/luckman212>
 # 2025/09/15 v2.8-dev
 #                 Fix bogus output when awk cannot parse rtt on linux with traceroute
+#                 Implement IPv4 / IPv6 parameter
 
 ver="v2.8-dev"
 format="%Y%m%d%H%M%S"
 d="no"
 c="no"
 C="no"
+ipv4="no"
+ipv6="no"
 f_ttl=255
 m_ttl=255
 seq=0
@@ -120,6 +123,8 @@ usage () {
 	echo "        -z            show what command is actually sent to traceroute (debug)"
 	echo "        -Z            run traceroute with sudo"
 	echo "        -o            Output ping like statistics"
+	echo "	      -4            Force IPv4, only works on traceroute"
+	echo "	      -6            Force IPv6, only works on traceroute"
 	echo
 	echo "Default port is 80"
 	echo "See also: man traceroute"
@@ -232,14 +237,21 @@ _testSite() {
 	[ "${c}" = "yes" ] && nows=`date +${format}`
 	[ "${d}" = "yes" ] && nowd=`date`
 
+	[ "${ipv4}" = "yes" ] && IP_PARAMETER="-4"
+	[ "${ipv6}" = "yes" ] && IP_PARAMETER="-6"
+	if [ "${ipv4}" = "yes" ] && [ "${ipv6}" = "yes" ]; then
+		echo >&2 "Cannot use both ipv4 and ipv6 at the same time"
+		exit 24
+	fi
+
 	if [ "$traceRouteImplementation" = "tcptraceroute" ]; then
 		if [ "${METHOD}" != "tcp" ] && [ "$LOCAL_OS" != "BSD" ] && [ "$LOCAL_OS" != "MacOSX" ]; then
 			echo echo >&2 "Cannot use ${traceRouteBinary} with method ${METHOD}. Please use traceroute"
 			exit 23
 		fi
-		traceRouteCommand="$SUDO_COMMAND${traceRouteBinary} -f ${f_ttl} -m ${m_ttl} -q ${numberOfQueries} -w ${timeToWait} ${args} ${host} ${port}"
+		traceRouteCommand="$SUDO_COMMAND${traceRouteBinary} ${IP_PARAMETER} -f ${f_ttl} -m ${m_ttl} -q ${numberOfQueries} -w ${timeToWait} ${args} ${host} ${port}"
 	else
-		traceRouteCommand="$SUDO_COMMAND${traceRouteBinary} ${METHOD_PARAMETER} ${METHOD} -f ${f_ttl} -m ${m_ttl} -q ${numberOfQueries} -w ${timeToWait} ${args} -p ${port} ${host}"
+		traceRouteCommand="$SUDO_COMMAND${traceRouteBinary} ${IP_PARAMETER} ${METHOD_PARAMETER} ${METHOD} -f ${f_ttl} -m ${m_ttl} -q ${numberOfQueries} -w ${timeToWait} ${args} -p ${port} ${host}"
 	fi
 	if [ "${_DEBUG}" = true ]; then
 		echo "$traceRouteCommand"
@@ -285,11 +297,11 @@ _testSite() {
 	else
 		rtt=`echo "${traceRoute}" | awk '{print $4}'`
 	fi
-    if [ "${rtt}" != "" ]; then
-            rtt=`echo "${traceRoute}" | awk '{print $(NF-1)}'`
-    else
-            rtt=""
-    fi
+	if [ "${rtt}" != "" ]; then
+		rtt=`echo "${traceRoute}" | awk '{print $(NF-1)}'`
+	else
+		rtt=""
+	fi
 	not=`echo "${rtt}" | tr -d ".0123456789"`
 
 	[ "${d}" = "yes" ] && echo "$nowd"
@@ -324,12 +336,12 @@ _testSite() {
 }
 
 _quit() {
-        echo ""
-        echo "${pingCount} packets transmitted, `expr ${pingCount} - ${pingFailCount}` received."
-        exit
+		echo ""
+		echo "${pingCount} packets transmitted, `expr ${pingCount} - ${pingFailCount}` received."
+		exit
 }
 
-while getopts Zdhzq:w:cr:nNFSAEi:f:l:m:p:s:x:CM:o opt ; do
+while getopts Zdhzq46:w:cr:nNFSAEi:f:l:m:p:s:x:CM:o opt ; do
 	case "$opt" in
 		d|c|C) eval $opt="yes" ;;
 		q|x) eval $opt="$OPTARG" ;;
@@ -343,13 +355,15 @@ while getopts Zdhzq:w:cr:nNFSAEi:f:l:m:p:s:x:CM:o opt ; do
 		Z) SUDO_COMMAND="sudo " ;;
 		z) _DEBUG=true ;;
 		o) summary="yes" ;;
+		4) ipv4="yes" ;;
+		6) ipv6="yes" ;;
 		?) usage; exit ;;
 	esac
 done
 
 checkEnvironment
 
-shift `expr $OPTIND - 1`
+#shift `expr $OPTIND - 1`
 
 if [ "$1" = "" ]; then
 	usage
@@ -374,6 +388,7 @@ if [ "$LOCAL_OS" = "BSD" ] || [ "$LOCAL_OS" = "MacOSX" ]; then
 else
 	METHOD_PARAMETER="-M"
 fi
+IP_PARAMETER=""
 
 i=1
 for args in "${@}"; do
